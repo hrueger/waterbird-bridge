@@ -5,6 +5,8 @@
   "main": "src/waterbird.ts",
   "scripts": {
     "tui": "tsx src/tui.ts",
+    "bridge": "tsx src/visca-bridge.ts",
+    "sniff": "tsx src/discovery-sniff.ts",
     "demo": "tsx src/demo.ts"
   },
   "keywords": [],

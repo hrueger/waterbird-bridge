@@ -71,7 +71,7 @@ function render() {
     process.stdout.write(`  Speed      ${s.label}\n`);
     process.stdout.write(`${arrow}\n`);
     process.stdout.write("  ──────────────────────────────────────────────────────\n");
-    process.stdout.write("  ←  →   move   Space  stop   1 2 3 4 5  speed   q quit\n");
+    process.stdout.write("  ←  →   move   Space/0  stop   1 2 3 4 5  speed   q quit\n");
   }
 
   process.stdout.write("\n");
@@ -195,7 +195,7 @@ async function main() {
         status = `Moving left at speed ${SPEEDS[speedIdx]!.label}`;
         try { await slider.setSpeed(-(offset / 49)); } catch {}
       }
-      if (key.name === "space") {
+      if (key.name === "space" || key.sequence === " " || key.name === "0") {
         moving = null;
         status = "Stopped";
         try { await slider.stop(); } catch {}
