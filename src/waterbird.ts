@@ -38,6 +38,26 @@ export class Waterbird {
     this.port = port;
   }
 
+  /**
+   * Power on and run the MSXL init/homing sequence.
+   * The slider will physically move to its end stops to calibrate.
+   * Wait ~10s after calling before sending movement commands.
+   */
+  async powerOn(): Promise<string> {
+    return this.cmd("O1");
+  }
+
+  /** Power off (standby) */
+  async powerOff(): Promise<void> {
+    await this.cmd("O0");
+  }
+
+  /** Query power state — returns true if on */
+  async isPoweredOn(): Promise<boolean> {
+    const r = await this.cmd("O");
+    return r.startsWith("p1");
+  }
+
   private async cmd(command: string): Promise<string> {
     const encoded = encodeURIComponent(`#${command}`);
     const path = `/cgi-bin/aw_ptz?cmd=${encoded}&res=1`;
