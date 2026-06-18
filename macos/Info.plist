@@ -9,14 +9,14 @@
   <key>CFBundleDisplayName</key>
   <string>Waterbird Bridge</string>
   <key>CFBundleExecutable</key>
-  <string>waterbird-bridge</string>
+  <string>WaterbirdBridge</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleVersion</key>
   <string>VERSION_PLACEHOLDER</string>
   <key>CFBundleShortVersionString</key>
   <string>VERSION_PLACEHOLDER</string>
-  <key>LSBackgroundOnly</key>
+  <key>LSUIElement</key>
   <true/>
   <key>NSHighResolutionCapable</key>
   <true/>

@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BINARY="dist/waterbird-bridge"
 
-echo "── 1/4  bundling TypeScript…"
+echo "── 1/4  bundling TypeScript..."
 mkdir -p dist
 npx esbuild src/visca-bridge.ts \
   --bundle \
@@ -12,13 +12,13 @@ npx esbuild src/visca-bridge.ts \
   --format=cjs \
   --outfile=dist/bridge.cjs
 
-echo "── 2/4  generating SEA blob…"
+echo "── 2/4  generating SEA blob..."
 node --experimental-sea-config sea-config.json
 
-echo "── 3/4  copying node binary…"
+echo "── 3/4  copying node binary..."
 cp "$(which node)" "$BINARY"
 
-echo "── 4/4  injecting blob…"
+echo "── 4/4  injecting blob..."
 if [[ "$OSTYPE" == darwin* ]]; then
   codesign --remove-signature "$BINARY"
   npx postject "$BINARY" NODE_SEA_BLOB dist/sea-prep.blob \
@@ -28,21 +28,31 @@ if [[ "$OSTYPE" == darwin* ]]; then
   VERSION=$(node -p "require('$SCRIPT_DIR/package.json').version")
   APP_DIR="dist/Waterbird Bridge.app"
 
-  echo "── 5/6  building .app bundle…"
+  echo "── 5/7  compiling Swift launcher..."
   rm -rf "$APP_DIR"
-  mkdir -p "$APP_DIR/Contents/MacOS"
-  cp "$BINARY" "$APP_DIR/Contents/MacOS/waterbird-bridge"
+  mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
+  swiftc -O -framework Cocoa -framework WebKit \
+    "$SCRIPT_DIR/macos/WaterbirdBridge.swift" \
+    -o "$APP_DIR/Contents/MacOS/WaterbirdBridge"
+
+  echo "── 6/7  assembling .app..."
+  cp "$BINARY" "$APP_DIR/Contents/Resources/waterbird-bridge"
   sed "s/VERSION_PLACEHOLDER/$VERSION/g" \
     "$SCRIPT_DIR/macos/Info.plist" > "$APP_DIR/Contents/Info.plist"
 
-  echo "── 6/6  signing & creating DMG…"
+  echo "── 7/7  signing & creating DMG..."
   SIGN_ID="${APPLE_SIGNING_IDENTITY:--}"
   if [[ "$SIGN_ID" == "-" ]]; then
-    codesign --force --deep --sign - "$APP_DIR"
+    codesign --force --sign - "$APP_DIR/Contents/Resources/waterbird-bridge"
+    codesign --force --sign - "$APP_DIR"
   else
-    codesign --force --deep --options runtime \
+    # Sign node binary first (needs JIT entitlements), then seal the .app
+    codesign --force --options runtime \
       --sign "$SIGN_ID" \
       --entitlements "$SCRIPT_DIR/macos/entitlements.plist" \
+      "$APP_DIR/Contents/Resources/waterbird-bridge"
+    codesign --force --options runtime \
+      --sign "$SIGN_ID" \
       "$APP_DIR"
   fi
 
@@ -62,11 +72,11 @@ if [[ "$OSTYPE" == darwin* ]]; then
   fi
 
   echo ""
-  echo "✓  dist/waterbird-bridge.dmg  ($(du -sh dist/waterbird-bridge.dmg | cut -f1))"
+  echo "Done: dist/waterbird-bridge.dmg  ($(du -sh dist/waterbird-bridge.dmg | cut -f1))"
 else
   npx postject "$BINARY" NODE_SEA_BLOB dist/sea-prep.blob \
     --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
-  echo "── 5/5  (no .app — not macOS)"
+  echo "── 5/5  (no .app -- not macOS)"
   echo ""
-  echo "✓  dist/waterbird-bridge  ($(du -sh "$BINARY" | cut -f1))"
+  echo "Done: dist/waterbird-bridge  ($(du -sh "$BINARY" | cut -f1))"
 fi
