@@ -2,12 +2,12 @@ import dgram from "node:dgram";
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Waterbird } from "./waterbird.js";
 
 const VISCA_PORT = 52381;
 const WEB_PORT   = 3000;
-const CONFIG_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "waterbird-config.json");
+// Config lives next to the binary (SEA) or in cwd (dev)
+const CONFIG_FILE = path.join(process.cwd(), "waterbird-config.json");
 
 // ── Config ────────────────────────────────────────────────────────────────────
 interface Config {

@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            artifact-name: waterbird-bridge-macos
+          - os: ubuntu-latest
+            artifact-name: waterbird-bridge-linux
+          - os: windows-latest
+            artifact-name: waterbird-bridge-windows.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: npm ci
+
+      # ── macOS: import Developer ID certificate into a temporary keychain ──
+      # Requires secrets: APPLE_CERTIFICATE (base64-encoded .p12),
+      #                   APPLE_CERTIFICATE_PASSWORD
+      # Skip gracefully when the secrets are absent (falls back to ad-hoc signing).
+      - name: Import signing certificate
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          echo "$APPLE_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      - name: Build (macOS / Linux)
+        if: runner.os != 'Windows'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          npm run build
+          mv dist/waterbird-bridge dist/${{ matrix.artifact-name }}
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          npx esbuild src/visca-bridge.ts --bundle --platform=node --format=cjs --outfile=dist/bridge.cjs
+          node --experimental-sea-config sea-config.json
+          $nodePath = (Get-Command node).Source
+          Copy-Item $nodePath dist\${{ matrix.artifact-name }}
+          npx postject dist\${{ matrix.artifact-name }} NODE_SEA_BLOB dist\sea-prep.blob `
+            --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+
+      # ── macOS: notarize the signed binary ──
+      # Requires secrets: APPLE_ID, APPLE_APP_PASSWORD, APPLE_TEAM_ID
+      # Only runs when APPLE_SIGNING_IDENTITY is also set (no point notarizing ad-hoc).
+      - name: Notarize
+        if: runner.os == 'macOS' && env.APPLE_ID != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          ditto -c -k --keepParent dist/${{ matrix.artifact-name }} dist/${{ matrix.artifact-name }}.zip
+          xcrun notarytool submit dist/${{ matrix.artifact-name }}.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: dist/${{ matrix.artifact-name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Make binaries executable
+        run: chmod +x artifacts/waterbird-bridge-macos artifacts/waterbird-bridge-linux
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
