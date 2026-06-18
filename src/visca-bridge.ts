@@ -1,11 +1,13 @@
 import dgram from "node:dgram";
 import http from "node:http";
+import net from "node:net";
 import fs from "node:fs";
 import path from "node:path";
 import { Waterbird } from "./waterbird.js";
 
 const VISCA_PORT = 52381;
-const WEB_PORT   = 3000;
+const PREFERRED_WEB_PORT = 7964;
+let WEB_PORT = PREFERRED_WEB_PORT;
 // Config lives next to the binary (SEA) or in cwd (dev)
 const CONFIG_FILE = path.join(process.cwd(), "waterbird-config.json");
 
@@ -370,12 +372,31 @@ const web = http.createServer(async (req, res) => {
   res.writeHead(404); res.end("not found");
 });
 
-web.listen(WEB_PORT, () => {
-  console.log(`Web config    http://localhost:${WEB_PORT}`);
-});
-
 // ── Start ─────────────────────────────────────────────────────────────────────
-sock.bind(VISCA_PORT, async () => {
-  console.log(`VISCA bridge  UDP :${VISCA_PORT}\n`);
-  await home();
-});
+function findAvailablePort(preferred: number): Promise<number> {
+  return new Promise(resolve => {
+    const s = net.createServer();
+    s.once("error", () => {
+      const fallback = net.createServer();
+      fallback.listen(0, () => {
+        const port = (fallback.address() as net.AddressInfo).port;
+        fallback.close(() => resolve(port));
+      });
+    });
+    s.listen(preferred, () => { s.close(() => resolve(preferred)); });
+  });
+}
+
+(async () => {
+  WEB_PORT = await findAvailablePort(PREFERRED_WEB_PORT);
+  if (WEB_PORT !== PREFERRED_WEB_PORT) {
+    process.stderr.write(`\n⚠  Port ${PREFERRED_WEB_PORT} is in use — web UI at http://localhost:${WEB_PORT}\n\n`);
+  }
+  web.listen(WEB_PORT, () => {
+    console.log(`Web config    http://localhost:${WEB_PORT}`);
+  });
+  sock.bind(VISCA_PORT, async () => {
+    console.log(`VISCA bridge  UDP :${VISCA_PORT}\n`);
+    await home();
+  });
+})();
